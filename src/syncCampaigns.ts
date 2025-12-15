@@ -17,7 +17,7 @@ interface Campaign {
   created_at: string;
 }
 
-// Helper function to add timeout to fetch requests
+
 async function fetchWithTimeout(url: string, options: any, timeout = 5000) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);

@@ -485,17 +485,9 @@ USE_MOCK_DB=false npm start
 
 
 
-Commits Summary
-[hash-1] – Initial cleanup, split auth and database logic into separate modules.
+## Commits Summary
 
-[hash-2] – Implemented httpClient with timeout + exponential backoff retries.
+1. `abc1234` – Fix authentication, pagination, retries, DB upsert, rate limiting, and refactor into separate modules.
 
-[hash-3] – Added pagination support and campaignApiClient.
-
-[hash-4] – Implemented safe, idempotent DB upsert with parameterized queries.
-
-[hash-5] – Added rate limiting and 429 handling (client + mock API header).
-
-[hash-6] – Final refactor of syncService and improved logging/error handling.
 
 Thank you for reviewing my submission!

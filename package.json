@@ -4,7 +4,7 @@
   "description": "Backend engineering assignment for Mixo Ads",
   "main": "src/index.ts",
   "scripts": {
-    "start": "ts-node src/index.ts",
+    "start": "node -r dotenv/config -r ts-node/register src/index.ts",
     "dev": "ts-node-dev --respawn src/index.ts"
   },
   "keywords": ["backend", "assignment", "mixoads"],

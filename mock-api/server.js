@@ -72,14 +72,17 @@ function rateLimitMiddleware(req, res, next) {
   
   const recentRequests = requests.filter(time => now - time < RATE_WINDOW);
   
-  if (recentRequests.length >= RATE_LIMIT) {
-    console.log(`Rate limit exceeded for client: ${clientId}`);
-    return res.status(429).json({
-      error: 'Rate limit exceeded',
-      message: `Too many requests. Limit: ${RATE_LIMIT} per minute`,
-      retry_after: 60
-    });
-  }
+// In rateLimitMiddleware
+if (recentRequests.length >= RATE_LIMIT) {
+  console.log(`Rate limit exceeded for client: ${clientId}`);
+  res.setHeader('Retry-After', '60');
+  return res.status(429).json({
+    error: 'Rate limit exceeded',
+    message: `Too many requests. Limit: ${RATE_LIMIT} per minute`,
+    retry_after: 60
+  });
+}
+
   
   recentRequests.push(now);
   requestCounts.set(clientId, recentRequests);
@@ -177,12 +180,15 @@ app.post('/api/campaigns/:id/sync', authMiddleware, rateLimitMiddleware, (req, r
 app.get('/api/error', (req, res) => {
   const error = new Error('Simulated server error');
   console.error(error);
-  
-  res.status(500).json({
-    error: error.message,
-    stack: error.stack
-  });
+
+  const body =
+    process.env.NODE_ENV === 'production'
+      ? { error: error.message }
+      : { error: error.message, stack: error.stack };
+
+  res.status(500).json(body);
 });
+
 
 app.get('/health', (req, res) => {
   res.json({ 

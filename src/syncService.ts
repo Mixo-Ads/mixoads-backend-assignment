@@ -10,7 +10,7 @@ export async function syncAllCampaigns(): Promise<void> {
   console.log('\nStep 3: Syncing campaigns to database and remote sync endpoint...\n');
   let successCount = 0;
 
-  // For simplicity keep sequential; can be batched with p-limit if needed
+  
   for (const campaign of campaigns) {
     console.log(`  Syncing: ${campaign.name} (ID: ${campaign.id})`);
 
@@ -21,7 +21,7 @@ export async function syncAllCampaigns(): Promise<void> {
       console.log(`  Successfully synced ${campaign.name}`);
     } catch (error: any) {
       console.error(`  Failed to sync ${campaign.name}:`, error.message);
-      // do not throw; continue with others
+     
     }
   }
 

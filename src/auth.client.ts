@@ -15,7 +15,7 @@ export async function getAccessToken(): Promise<string> {
     throw new Error('AD_PLATFORM_EMAIL and AD_PLATFORM_PASSWORD must be set in environment variables');
   }
 
-  // Reuse token if not expired
+
   if (cachedToken && tokenExpiresAt && Date.now() < tokenExpiresAt - 60_000) {
     return cachedToken;
   }

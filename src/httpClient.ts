@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 import { setTimeout as sleep } from 'timers/promises';
 
-// Basic rate limiter: max 10 req/min for this client [web:50][web:48]
+
 const MAX_REQUESTS_PER_MINUTE = 10;
 const WINDOW_MS = 60_000;
 const requestTimestamps: number[] = [];
@@ -19,7 +19,7 @@ function enforceClientRateLimit() {
   return Promise.resolve();
 }
 
-// Fetch with timeout only
+
 export async function fetchWithTimeout(
   url: string,
   options: any,
@@ -44,7 +44,7 @@ export async function fetchWithTimeout(
   }
 }
 
-// Fetch with timeout + retries + rate-limit/429 handling [web:52][web:64][web:60]
+
 export interface RetryOptions {
   timeoutMs?: number;
   maxRetries?: number;
@@ -70,7 +70,7 @@ export async function fetchWithTimeoutAndRetry(
     try {
       const response = await fetchWithTimeout(url, options, timeoutMs);
 
-      // Handle 429 (rate limit from server)
+
       if (response.status === 429) {
         const retryAfterHeader = response.headers.get('retry_after') || response.headers.get('retry-after');
         const retryAfterSec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : 60;
@@ -79,12 +79,12 @@ export async function fetchWithTimeoutAndRetry(
         await sleep(delayMs);
         attempt++;
         if (attempt > maxRetries) {
-          return response; // give up with last 429
+          return response; 
         }
         continue;
       }
 
-      // Retry on 5xx
+     
       if (response.status >= 500 && response.status < 600 && attempt < maxRetries) {
         const backoff = baseDelayMs * Math.pow(2, attempt);
         console.warn(`HTTP ${response.status} from ${url}. Retrying in ${backoff}ms (attempt ${attempt + 1}/${maxRetries})...`);
@@ -95,7 +95,7 @@ export async function fetchWithTimeoutAndRetry(
 
       return response;
     } catch (error: any) {
-      // Network or timeout error
+    
       if (attempt >= maxRetries) {
         console.error(`Failed request to ${url} after ${attempt + 1} attempts:`, error.message);
         throw error;

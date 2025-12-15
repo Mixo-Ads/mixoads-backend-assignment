@@ -77,7 +77,7 @@ export async function syncCampaignOnRemote(campaignId: string): Promise<void> {
       body: JSON.stringify({ campaign_id: campaignId })
     },
     {
-      // slow endpoint (2s) + random timeouts; give 5s timeout and retries [web:21][web:64]
+      
       timeoutMs: 5000,
       maxRetries: 5,
       baseDelayMs: 500

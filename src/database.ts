@@ -6,8 +6,8 @@ const pool = new Pool({
   database: process.env.DB_NAME || 'mixoads',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
-  max: 10,                 // connection pool size
-  idleTimeoutMillis: 30000 // close idle connections
+  max: 10,                
+  idleTimeoutMillis: 30000 
 });
 
 export interface Campaign {

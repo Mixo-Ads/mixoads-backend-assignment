@@ -95,6 +95,51 @@ async function fetchWithRetry(
   throw new Error("Unreachable");
 }
 
+async function syncCampaignWithRetry(
+  campaignId: string,
+  accessToken: string,
+  retries = 3
+) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetchWithTimeout(
+        `${API_BASE_URL}/api/campaigns/${campaignId}/sync`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ campaign_id: campaignId }),
+        },
+        3000 // must be > 2s
+      );
+
+      if (res.status === 429) {
+        const retryAfter = Number(res.headers.get("retry-after")) || 60;
+        console.warn(
+          `Rate limited syncing ${campaignId}. Waiting ${retryAfter}s`
+        );
+        await new Promise((r) => setTimeout(r, retryAfter * 1000));
+        continue;
+      }
+
+      if (!res.ok) {
+        throw new Error(`Sync failed: ${res.status}`);
+      }
+
+      return;
+    } catch (err) {
+      if (attempt === retries) throw err;
+
+      const delay = 1000 * attempt;
+      console.warn(
+        `Retrying sync for ${campaignId} (${attempt}/${retries}) after ${delay}ms`
+      );
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+}
 
 export async function syncAllCampaigns() {
   console.log("Syncing campaigns from Ad Platform...\n");
@@ -136,24 +181,9 @@ export async function syncAllCampaigns() {
     console.log(`\n   Syncing: ${campaign.name} (ID: ${campaign.id})`);
 
     try {
-      const syncResponse = await fetchWithTimeout(
-        `${API_BASE_URL}/api/campaigns/${campaign.id}/sync`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ campaign_id: campaign.id }),
-        },
-        5000 // <-- IMPORTANT (mock API takes 2s)
-      );
-
-      if (!syncResponse.ok) {
-        throw new Error(`Sync failed: ${syncResponse.status}`);
-      }
-
+      await syncCampaignWithRetry(campaign.id, accessToken);
       await saveCampaignToDB(campaign);
+
       successCount++;
 
       console.log(`   Successfully synced ${campaign.name}`);

@@ -43,16 +43,12 @@ async function fetchAllCampaigns(accessToken: string): Promise<Campaign[]> {
   const allCampaigns: Campaign[] = [];
 
   while (hasMore) {
-    const res = await fetch(
+    const res = await fetchWithRetry(
       `${API_BASE_URL}/api/campaigns?page=${page}&limit=${PAGE_SIZE}`,
       {
         headers: { Authorization: `Bearer ${accessToken}` },
       }
     );
-
-    if (!res.ok) {
-      throw new Error(`Failed to fetch campaigns: ${res.status}`);
-    }
 
     const data: any = await res.json();
     allCampaigns.push(...data.data);
@@ -62,6 +58,43 @@ async function fetchAllCampaigns(accessToken: string): Promise<Campaign[]> {
 
   return allCampaigns;
 }
+
+async function fetchWithRetry(
+  url: string,
+  options: any,
+  retries = 3,
+  baseDelay = 500
+) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, options);
+
+      // Handle rate limit
+      if (res.status === 429) {
+        const retryAfter = Number(res.headers.get("retry-after")) || 60;
+        console.warn(`Rate limited. Retrying after ${retryAfter}s`);
+        await new Promise((r) => setTimeout(r, retryAfter * 1000));
+        continue;
+      }
+
+      // Retry on server errors
+      if (res.status >= 500) {
+        throw new Error(`Server error ${res.status}`);
+      }
+
+      return res;
+    } catch (err) {
+      if (attempt === retries) throw err;
+
+      const delay = baseDelay * Math.pow(2, attempt);
+      console.warn(`Retrying (${attempt}/${retries}) after ${delay}ms`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+
+  throw new Error("Unreachable");
+}
+
 
 export async function syncAllCampaigns() {
   console.log("Syncing campaigns from Ad Platform...\n");

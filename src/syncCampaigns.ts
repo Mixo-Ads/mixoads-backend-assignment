@@ -40,12 +40,10 @@ async function fetchWithTimeout(url: string, options: any, timeout = 5000) {
 export async function syncAllCampaigns() {
   console.log('Syncing campaigns from Ad Platform...\n');
   
-  const email = "admin@mixoads.com";
-  const password = "SuperSecret123!";
-  
-  const authString = Buffer.from(`${email}:${password}`).toString('base64');
-  
-  console.log(`Using auth: Basic ${authString}`);
+  const email = process.env.AD_PLATFORM_EMAIL!;
+  const password = process.env.AD_PLATFORM_PASSWORD!;
+
+  const authString = Buffer.from(`${email}:${password}`).toString("base64");
   
   console.log('\nStep 1: Getting access token...');
   

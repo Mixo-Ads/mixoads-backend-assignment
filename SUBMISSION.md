@@ -1,209 +1,284 @@
-# Backend Engineer Assignment - Submission
 
-**Name:** [Your Name]  
-**Date:** [Submission Date]  
-**Time Spent:** [Honest estimate]  
-**GitHub:** [Your GitHub username]
 
----
 
-## Part 1: What Was Broken
+Backend Engineer Assignment – Submission
 
-List the major issues you identified. For each issue, explain what was wrong and why it mattered.
+Name: Surendiran R
+Date: 28-Dec-2025
+Time Spent: ~3.5 hours
+GitHub: github.com/your-username
 
-### Issue 1: [Issue Name]
-**What was wrong:**  
-[Detailed explanation]
+=====================Part 1: What Was Broken
+========Issue 1: Sync API Requests Timing Out
 
-**Why it mattered:**  
-[Impact on system - crashes? data loss? security? performance?]
+What was wrong:
+The campaign sync API calls were wrapped with a hardcoded timeout of 1000 ms (1 second) using AbortController. Most /sync endpoints take longer than 1 second due to DB operations or processing logic, causing requests to be aborted prematurely.
 
-**Where in the code:**  
-[File and line numbers or function names]
+Why it mattered:
+This resulted in 9 out of 10 campaigns failing to sync, even though the backend API was working correctly. The system appeared unreliable and caused partial data synchronization.
 
----
+Where in the code:
+fetchWithTimeout() usage inside syncAllCampaigns()
 
-### Issue 2: [Issue Name]
-**What was wrong:**  
-[Detailed explanation]
+fetchWithTimeout(..., 1000)
 
-**Why it mattered:**  
-[Impact]
+========Issue 2: Inconsistent API Base URL Usage
 
-**Where in the code:**  
-[Location]
+What was wrong:
+Although API_BASE_URL was defined globally, the /sync API still used a hardcoded localhost URL.
 
----
+Why it mattered:
+This breaks portability and makes the application fail in staging or production environments where the API base URL differs.
 
-### Issue 3: [Issue Name]
-**What was wrong:**  
+Where in the code:
 
+http://localhost:3001/api/campaigns/${campaign.id}/sync
 
-**Why it mattered:**  
+========Issue 3: Sensitive Data Logged to Console
 
+What was wrong:
+The application logged Base64 encoded credentials and access tokens to the console.
 
-**Where in the code:**  
+Why it mattered:
+This is a security risk, especially in shared logs or production environments. Tokens could be leaked and misused.
 
+Where in the code:
 
----
+console.log(`Using auth: Basic ${authString}`);
+console.log(`Got access token: ${accessToken}`);
 
-[Continue for 5-7 major issues total]
+========Issue 4: Missing Error Validation on HTTP Responses
 
----
+What was wrong:
+Some fetch responses were assumed to be successful without checking response.ok.
 
-## Part 2: How I Fixed It
+Why it mattered:
+Failures such as 401, 500, or 503 were not clearly handled, making debugging difficult.
 
-For each issue above, explain your fix in detail.
+Where in the code:
+Auth token fetch and sync fetch responses.
 
-### Fix 1: [Issue Name]
+========Issue 5: Weak Error Isolation During Campaign Sync
 
-**My approach:**  
-[What did you do to fix it?]
+What was wrong:
+Although errors were caught per campaign, the error messages were not descriptive enough and didn’t differentiate timeout vs API failures clearly.
 
-**Why this approach:**  
-[Why did you choose this solution over alternatives?]
+Why it mattered:
+Reduced observability and made root-cause analysis harder.
 
-**Trade-offs:**  
-[What compromises did you make? What would you do differently with more time?]
+Where in the code:
+Campaign sync loop error handling.
 
-**Code changes:**  
-[Link to commits, files, or specific line numbers]
 
----
 
-### Fix 2: [Issue Name]
 
-**My approach:**  
 
 
-**Why this approach:**  
+=====================Part 2: How I Fixed It
+Fix 1: Increased Request Timeout
 
+My approach:
+Increased the timeout from 1 second to 5 seconds and centralized it as a constant.
 
-**Trade-offs:**  
+Why this approach:
+The sync API performs I/O-heavy operations. Increasing timeout avoids unnecessary aborts without affecting performance significantly.
 
+Trade-offs:
+Longer timeout could delay failure detection, but it improves reliability.
 
-**Code changes:**  
+Code changes:
 
+const REQUEST_TIMEOUT = 5000;
 
----
+Fix 2: Centralized API Base URL Usage
 
-[Continue for all fixes]
+My approach:
+Replaced all hardcoded URLs with API_BASE_URL.
 
----
+Why this approach:
+Improves environment flexibility and deployment readiness.
 
-## Part 3: Code Structure Improvements
+Trade-offs:
+None.
 
-Explain how you reorganized/refactored the code.
+Code changes:
 
-**What I changed:**  
-[Describe the new structure - what modules/files did you create?]
+`${API_BASE_URL}/api/campaigns/${campaign.id}/sync`
 
-**Why it's better:**  
-[Improved testability? Separation of concerns? Reusability?]
+Fix 3: Removed Sensitive Logs
 
-**Architecture decisions:**  
-[Any patterns you used? Class-based? Functional? Why?]
+My approach:
+Stopped logging credentials and tokens. Logged only success states.
 
----
+Why this approach:
+Prevents security leaks and follows best practices.
 
-## Part 4: Testing & Verification
+Trade-offs:
+Less verbose logs, but safer.
 
-How did you verify your fixes work?
+Fix 4: Added HTTP Status Validation
 
-**Test scenarios I ran:**
-1. [Scenario 1 - e.g., "Ran sync 10 times to test reliability"]
-2. [Scenario 2 - e.g., "Made 20 requests to test rate limiting"]
-3. [etc.]
+My approach:
+Checked response.ok after every fetch request and threw meaningful errors.
 
-**Expected behavior:**  
-[What should happen when it works correctly?]
+Why this approach:
+Ensures failures are caught early and explained clearly.
 
-**Actual results:**  
-[What happened when you tested?]
+Trade-offs:
+Slightly more code, much better reliability.
 
-**Edge cases tested:**  
-[What unusual scenarios did you test?]
+Fix 5: Improved Error Handling per Campaign
 
----
+My approach:
+Wrapped each campaign sync in its own try/catch and added descriptive logs.
 
-## Part 5: Production Considerations
+Why this approach:
+One failure should not stop the entire sync process.
 
-What would you add/change before deploying this to production?
+Trade-offs:
+Sequential execution is slower, but safer.
 
-### Monitoring & Observability
-[What metrics would you track? What alerts would you set up?]
 
-### Error Handling & Recovery
-[What additional error handling would you add?]
 
-### Scaling Considerations
-[How would this handle 100+ clients? What would break first?]
 
-### Security Improvements
-[What security enhancements would you add?]
 
-### Performance Optimizations
-[What could be made faster or more efficient?]
 
----
 
-## Part 6: Limitations & Next Steps
+=====================Part 3: Code Structure Improvements
 
-Be honest about what's still not perfect.
+What I changed:
 
-**Current limitations:**  
-[What's still not production-ready?]
+Introduced centralized configuration constants
 
-**What I'd do with more time:**  
-[If you had another 5 hours, what would you improve?]
+Improved helper function (fetchWithTimeout)
 
-**Questions I have:**  
-[Anything you're unsure about or would want to discuss?]
+Cleaned up logging and error flow
 
----
+Why it's better:
 
-## Part 7: How to Run My Solution
+Easier to debug
 
-Clear step-by-step instructions.
+More maintainable
 
-### Setup
-```bash
-# Step-by-step commands
-```
+Production-ready structure
 
-### Running
-```bash
-# How to start everything
-```
+Architecture decisions:
+Used functional approach for simplicity and clarity. No over-engineering for the assignment scope.
 
-### Expected Output
-```
-# What should you see when it works?
-```
 
-### Testing
-```bash
-# How to verify it's working correctly
-```
 
----
 
-## Part 8: Additional Notes
 
-Any other context, thoughts, or reflections on the assignment.
 
-[Your thoughts here]
 
----
+=====================Part 4: Testing & Verification
 
-## Commits Summary
+Test scenarios I ran:
 
-List your main commits and what each one addressed:
+Ran sync with default 1s timeout (failure)
 
-1. `[commit hash]` - [Description of what this commit fixed]
-2. `[commit hash]` - [Description]
-3. etc.
+Increased timeout to 5s and reran
 
----
+Verified DB save for all campaigns
 
-**Thank you for reviewing my submission!**
+Simulated API downtime
+
+Expected behavior:
+All campaigns should sync successfully without premature failures.
+
+Actual results:
+10/10 campaigns synced successfully after fixes.
+
+Edge cases tested:
+
+Slow API response
+
+Partial campaign failure
+
+Token fetch failure
+
+
+
+
+
+=====================Part 5: Production Considerations
+Monitoring & Observability
+
+Campaign sync success rate
+
+API latency
+
+Timeout count
+
+Error Handling & Recovery
+
+Retry mechanism with exponential backoff
+
+Dead-letter queue for failed campaigns
+
+Scaling Considerations
+
+Batch sync with concurrency limits
+
+Worker queues (BullMQ / SQS)
+
+Security Improvements
+
+Move credentials to secret manager
+
+OAuth token rotation
+
+Remove Basic Auth
+
+Performance Optimizations
+
+Parallel sync with controlled concurrency
+
+Caching campaign metadata
+
+
+
+
+
+=====================Part 6: Limitations & Next Steps
+
+Current limitations:
+
+Sequential campaign sync
+
+No retry logic
+
+No unit tests
+
+What I'd do with more time:
+
+Add retries with backoff
+
+Add Jest unit tests
+
+Implement pagination loop
+
+Questions I have:
+
+Expected SLA for sync completion?
+
+Is partial sync acceptable?
+
+
+
+
+
+
+
+=====================Part 7: How to Run My Solution
+Setup
+npm install
+
+Running
+npm run sync
+
+Expected Output
+Sync complete: 10/10 campaigns synced
+
+Testing
+Check database records and logs

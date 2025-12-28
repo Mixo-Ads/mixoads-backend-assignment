@@ -1,18 +1,22 @@
 import dotenv from 'dotenv';
-import { syncAllCampaigns } from './syncCampaigns';
+import { syncAllCampaigns } from './services/campaignService';
+import { closePool } from './db';
 
 dotenv.config();
 
 async function main() {
-  console.log('Starting campaign sync...');
+  console.log('Starting Mixo Ads Campaign Sync Service');
   console.log('='.repeat(60));
-  
+
   try {
     await syncAllCampaigns();
-    console.log('\nSync completed successfully!');
-  } catch (error) {
-    console.error('\nSync failed:', error);
+  } catch (error: any) {
+    console.error('\nFATAL ERROR: Sync failed unexpectedly');
+    console.error(error.message);
     process.exit(1);
+  } finally {
+    // Clean up database connection
+    await closePool();
   }
 }
 

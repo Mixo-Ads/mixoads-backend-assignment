@@ -62,6 +62,7 @@ app.post('/auth/token', (req, res) => {
 
 function rateLimitMiddleware(req, res, next) {
   const clientId = req.headers['x-client-id'] || 'default';
+  console.log("clientId", clientId)
   const now = Date.now();
   
   if (!requestCounts.has(clientId)) {
@@ -69,10 +70,10 @@ function rateLimitMiddleware(req, res, next) {
   }
   
   const requests = requestCounts.get(clientId);
-  
+
   const recentRequests = requests.filter(time => now - time < RATE_WINDOW);
-  
-  if (recentRequests.length >= RATE_LIMIT) {
+
+  if (recentRequests.length > RATE_LIMIT) {
     console.log(`Rate limit exceeded for client: ${clientId}`);
     return res.status(429).json({
       error: 'Rate limit exceeded',

@@ -9,9 +9,13 @@ async function main() {
   
   try {
     await syncAllCampaigns();
-    console.log('\nSync completed successfully!');
-  } catch (error) {
-    console.error('\nSync failed:', error);
+    console.log('\n✓ Sync completed successfully!');
+    process.exit(0);
+  } catch (error: any) {
+    console.error('\n✗ Sync failed:', error.message);
+    if (error.stack && process.env.NODE_ENV === 'development') {
+      console.error('\nStack trace:', error.stack);
+    }
     process.exit(1);
   }
 }

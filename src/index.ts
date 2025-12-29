@@ -1,17 +1,21 @@
-import dotenv from 'dotenv';
-import { syncAllCampaigns } from './syncCampaigns';
-
+import dotenv from "dotenv";
 dotenv.config();
 
+import { syncAllCampaigns } from "./services/campaignSyncService";
+import logger from "./utils/logger";
+
 async function main() {
-  console.log('Starting campaign sync...');
-  console.log('='.repeat(60));
-  
+  logger.info(
+    `Starting campaign sync application in ${
+      process.env.NODE_ENV || "development"
+    } mode...`
+  );
+
   try {
     await syncAllCampaigns();
-    console.log('\nSync completed successfully!');
+    logger.info("Sync completed successfully!");
   } catch (error) {
-    console.error('\nSync failed:', error);
+    logger.error("Sync failed", { error });
     process.exit(1);
   }
 }

@@ -136,6 +136,22 @@ Pagination is handled sequentially for simplicity. Performance optimizations and
 
 ---
 
+### Fix 3: Rate limiting and retry handling (Issues 3 & 4)
+
+**My approach:**
+Introduced a centralized request execution path that applies bounded retries with exponential backoff and jitter. Added client-side request pacing to ensure the API’s documented rate limit (10 requests per minute) is never exceeded, including during retries.
+
+**Why this approach:**
+Retry logic alone reacts to failures but does not prevent rate limit violations. By enforcing a minimum interval between all outgoing requests, the client proactively respects API constraints and avoids repeated 429 responses.
+
+**Trade-offs:**
+The implementation is intentionally conservative and sequential, favoring correctness and predictability over throughput. More advanced approaches (token buckets, adaptive concurrency) were intentionally avoided to keep behavior explicit and debuggable.
+
+**Code changes:**
+`src/syncCampaigns.ts`
+
+---
+
 ## Part 3: Code Structure Improvements
 
 Explain how you reorganized/refactored the code.

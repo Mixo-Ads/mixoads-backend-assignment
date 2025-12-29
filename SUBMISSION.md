@@ -281,9 +281,12 @@ Any other context, thoughts, or reflections on the assignment.
 
 List your main commits and what each one addressed:
 
-1. `[commit hash]` - [Description of what this commit fixed]
-2. `[commit hash]` - [Description]
-3. etc.
+1. `e16ab1e7316eb33b6ddedd981f87f53b7ad2beef` - Fixed critical bugs: separated authentication, API calls, and types from main function for better modularity.
+2. `0745e6751a46990cb9f6ae0006e53528ccc89f8d` - Fixed pagination: fetched all campaign pages, not just the first 10; added batch-wise processing for campaigns.
+3. `1280440eff8dd2cad0965f5144d55958d78225a9` - Refactored database.ts: implemented singleton Pool and added ON CONFLICT to prevent duplicate entries.
+4. `381cb2736d7992486333db223f8e38cd74226f0b` - Added full pagination + retry/backoff for campaign sync to handle all pages reliably.
+5. `3b66d518cf80a9d5abf36898e6377c6df90f72b1` - Added retry logic, exponential backoff, and adaptive rate-limit handling for transient errors.
+6. `6897ebd85f9abd0828d4648b614179d9d95a9221` - Initial commit: Backend assignment starter code.
 
 ---
 

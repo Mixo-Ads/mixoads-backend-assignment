@@ -1,6 +1,7 @@
 import fetch from "node-fetch";
 import { saveCampaignToDB } from "./database";
 import { fetchWithTimeout } from "./httpClient";
+import { retry } from "./retry";
 
 // Configuration constants
 const API_BASE_URL = process.env.AD_PLATFORM_API_URL || "http://localhost:3001";
@@ -31,13 +32,21 @@ export async function syncAllCampaigns() {
 
   console.log("\nStep 1: Getting access token...");
 
-  const authResponse = await fetch(`${API_BASE_URL}/auth/token`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${authString}`,
-    },
-  });
-
+  const authResponse = await retry(() =>
+    fetchWithTimeout(
+      `${API_BASE_URL}/auth/token`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${authString}`,
+        },
+      },
+      3000
+    )
+  );
+  if (!authResponse.ok) {
+    throw new Error(`Auth failed: ${authResponse.status}`);
+  }
   const authData: any = await authResponse.json();
   const accessToken = authData.access_token;
 
@@ -73,18 +82,27 @@ export async function syncAllCampaigns() {
     console.log(`\n   Syncing: ${campaign.name} (ID: ${campaign.id})`);
 
     try {
-      const syncResponse = await fetchWithTimeout(
-        `${API_BASE_URL}/api/campaigns/${campaign.id}/sync`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
+      const syncResponse = await retry(async () => {
+        const res = await fetchWithTimeout(
+          `${API_BASE_URL}/api/campaigns/${campaign.id}/sync`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ campaign_id: campaign.id }),
           },
-          body: JSON.stringify({ campaign_id: campaign.id }),
-        },
-        3000
-      );
+          3000
+        );
+
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(`Sync failed ${res.status}: ${text}`);
+        }
+
+        return res;
+      });
 
       const syncData: any = await syncResponse.json();
 

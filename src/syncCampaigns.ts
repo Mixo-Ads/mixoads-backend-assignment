@@ -4,6 +4,7 @@ import { saveCampaignToDB } from './database';
 // Configuration constants
 const API_BASE_URL = process.env.AD_PLATFORM_API_URL || 'http://localhost:3001';
 const PAGE_SIZE = 10;
+const BATCH_SIZE = 5;
 
 // Type definitions for campaigns
 interface Campaign {
@@ -37,44 +38,101 @@ async function fetchWithTimeout(url: string, options: any, timeout = 5000) {
   }
 }
 
-// exponential backoff helper function
-async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  maxRetries = 3,
-  initialDelay = 1000
-): Promise<T> {
-  let attempt = 0;
-  let delay = initialDelay;
+// Fetch all campaigns from API, handling pagination, transient errors, and rate limits.
+async function fetchAllCampaigns(accessToken: string) {
+  let page = 1;
+  let campaigns: Campaign[] = [];
+  let hasMore = true;
 
-  while (true) {
+  while (hasMore) {
     try {
-      return await fn();
-    } catch (error: any) {
-      attempt++;
+      console.log(`Fetching page ${page}...`);
 
-      if (error.status === 429 && error.retry_after) {
-        const waitTime = error.retry_after * 1000;
-        console.warn(`Rate limit hit. Waiting ${waitTime / 1000}s before retry...`);
-        await new Promise(r => setTimeout(r, waitTime));
-      } else if (error.message === 'Request timeout' || error.status === 503) {
-        if (attempt > maxRetries) throw error;
-        console.warn(`Transient error. Retry ${attempt} in ${delay}ms...`);
-        await new Promise(r => setTimeout(r, delay));
-        delay *= 2;
+      const res = await fetchWithTimeout(
+        `${API_BASE_URL}/api/campaigns?page=${page}&limit=${PAGE_SIZE}`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        },
+        5000
+      );
+
+       // Handle 429 Rate Limit
+      if (res.status === 429) {
+        const retryAfter = parseInt(res.headers.get('retry-after') || '5', 10) * 1000;
+        console.log(`Rate limit hit. Waiting ${retryAfter / 1000}s before retry...`);
+        await new Promise((r) => setTimeout(r, retryAfter));
+        continue; // retry same page
       }
-      else {
-        throw error;
+
+      if (!res.ok) {
+        throw new Error(`API returned ${res.status}: ${res.statusText}`);
       }
+
+      const data = await res.json();
+      campaigns = campaigns.concat(data.data);
+      hasMore = data.pagination.has_more;
+      page++;
+      console.log(`  Found ${data.data.length} campaigns on page ${page - 1}`);
+    } catch (error: any) {
+      console.log(`Transient error. Retrying page ${page} in 1s...`);
+      await new Promise((r) => setTimeout(r, 1000));
     }
   }
+
+  console.log(`Total campaigns fetched: ${campaigns.length}`);
+  return campaigns;
 }
 
+// Process a single campaign: sync to API + save to DB
+// Implements per-campaign retry with exponential backoff
+async function processCampaign(campaign: Campaign, accessToken: string) {
+  const maxRetries = 3;
+  let attempt = 0;
+  const baseBackoff = 1000;
 
+  while (attempt < maxRetries) {
+    try {
+      const syncRes = await fetchWithTimeout(
+        `${API_BASE_URL}/api/campaigns/${campaign.id}/sync`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ campaign_id: campaign.id }),
+        },
+        3000
+      );
+// Handle rate limiting per campaign
+      if (syncRes.status === 429) {
+        const retryAfter = parseInt(syncRes.headers.get('retry-after') || '5', 10) * 1000;
+        console.log(`Rate limit hit for ${campaign.name}. Waiting ${retryAfter / 1000}s...`);
+        await new Promise((r) => setTimeout(r, retryAfter));
+        continue;
+      }
+
+// Save to database after successful sync
+      await saveCampaignToDB(campaign);
+      console.log(`   Successfully synced ${campaign.name}`);
+      return true;
+    } catch (error: any) {
+      attempt++;
+      console.log(`   Retry ${attempt} for ${campaign.name} in ${baseBackoff * attempt}ms due to: ${error.message}`);
+      await new Promise((r) => setTimeout(r, baseBackoff * attempt));
+    }
+  }
+
+  console.error(`   Failed to sync ${campaign.name} after ${maxRetries} attempts`);
+  return false;
+}
+
+// Main function: fetch all campaigns and process them in batches
 export async function syncAllCampaigns() {
   console.log('Syncing campaigns from Ad Platform...\n');
 
-  const email = process.env.AD_PLATFORM_EMAIL;
-  const password = process.env.AD_PLATFORM_PASSWORD;
+  const email = process.env.AD_PLATFORM_EMAIL!;
+  const password = process.env.AD_PLATFORM_PASSWORD!;
 
   const authString = Buffer.from(`${email}:${password}`).toString('base64');
 
@@ -95,95 +153,20 @@ export async function syncAllCampaigns() {
   console.log(`Got access token: ${accessToken}`);
 
   console.log('\nStep 2: Fetching campaigns...');
-
-  let page = 1;
-  let hasMore = true;
-  const allCampaigns: Campaign[] = [];
-
-  while (hasMore) {
-    console.log(`Fetching page ${page}...`);
-
-    const campaignsData: any = await retryWithBackoff(async () => {
-      const response = await fetchWithTimeout(
-        `${API_BASE_URL}/api/campaigns?page=${page}&limit=${PAGE_SIZE}`,
-        { headers: { 'Authorization': `Bearer ${accessToken}` } },
-        5000
-      );
-
-      if (response.status === 429) {
-        const data = await response.json();
-        const error: any = new Error('Rate limit');
-        error.status = 429;
-        error.retry_after = data.retry_after;
-        throw error;
-      }
-
-      if (response.status === 503) {
-        const error: any = new Error('Service unavailable');
-        error.status = 503;
-        throw error;
-      }
-
-      return await response.json();
-    });
-
-    console.log(`  Found ${campaignsData.data.length} campaigns on page ${page}`);
-    allCampaigns.push(...campaignsData.data);
-
-    hasMore = campaignsData.pagination.has_more; // fetch campaigns while has_more is true
-    page++;
-  }
-  console.log(`\nTotal campaigns fetched: ${allCampaigns.length}`);
+  const campaigns = await fetchAllCampaigns(accessToken);
 
   console.log('\nStep 3: Syncing campaigns to database...');
 
   let successCount = 0;
 
-  for (const campaign of allCampaigns) {
-    console.log(`\n   Syncing: ${campaign.name} (ID: ${campaign.id})`);
-
-    try {
-      await retryWithBackoff(async () => {
-        const syncResponse = await fetchWithTimeout(
-          `http://localhost:3001/api/campaigns/${campaign.id}/sync`,
-          {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ campaign_id: campaign.id })
-          },
-          3000 // 3 seconds timeout greater that the API limit of 2 seconds
-        );
-
-        // Throw 429 or 503 manually for helper
-        if (syncResponse.status === 429) {
-          const data = await syncResponse.json();
-          const error: any = new Error('Rate limit');
-          error.status = 429;
-          error.retry_after = data.retry_after;
-          throw error;
-        }
-
-        if (syncResponse.status === 503) {
-          const error: any = new Error('Service unavailable');
-          error.status = 503;
-          throw error;
-        }
-
-        const syncData: any = await syncResponse.json();
-
-        await saveCampaignToDB(campaign);
-      });
-      successCount++;
-      console.log(`   Successfully synced ${campaign.name}`);
-    } catch (error: any) {
-      console.error(`   Failed to sync ${campaign.name}:`, error.message);
-    }
+  // Process in batches
+  for (let i = 0; i < campaigns.length; i += BATCH_SIZE) {
+    const batch = campaigns.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(batch.map((c) => processCampaign(c, accessToken)));
+    successCount += results.filter(Boolean).length;
   }
 
   console.log('\n' + '='.repeat(60));
-  console.log(`Sync complete: ${successCount}/${allCampaigns.length} campaigns synced`);
+  console.log(`Sync complete: ${successCount}/${campaigns.length} campaigns synced`);
   console.log('='.repeat(60));
 }

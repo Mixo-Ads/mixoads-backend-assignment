@@ -40,12 +40,14 @@ async function fetchWithTimeout(url: string, options: any, timeout = 5000) {
 export async function syncAllCampaigns() {
   console.log('Syncing campaigns from Ad Platform...\n');
   
-  const email = "admin@mixoads.com";
-  const password = "SuperSecret123!";
-  
+  const email = process.env.AD_PLATFORM_EMAIL;
+  const password = process.env.AD_PLATFORM_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error('Missing Ad Platform credentials');
+  }
   const authString = Buffer.from(`${email}:${password}`).toString('base64');
   
-  console.log(`Using auth: Basic ${authString}`);
   
   console.log('\nStep 1: Getting access token...');
   
@@ -58,8 +60,6 @@ export async function syncAllCampaigns() {
   
   const authData: any = await authResponse.json();
   const accessToken = authData.access_token;
-  
-  console.log(`Got access token: ${accessToken}`);
   
   console.log('\nStep 2: Fetching campaigns...');
   

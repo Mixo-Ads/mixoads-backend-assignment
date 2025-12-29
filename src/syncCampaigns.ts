@@ -5,6 +5,9 @@ import { saveCampaignToDB } from './database';
 const API_BASE_URL = process.env.AD_PLATFORM_API_URL || 'http://localhost:3001';
 const PAGE_SIZE = 10;
 
+// Timeout policy (milliseconds)
+const REQUEST_TIMEOUT_MS = 5000;
+
 // Rate limit: 10 requests / minute → 1 request every 6 seconds
 const MIN_REQUEST_INTERVAL_MS = 6000;
 let lastRequestAt = 0;
@@ -21,7 +24,7 @@ interface Campaign {
   created_at: string;
 }
 
-// Helper sleep
+// Sleep helper
 async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -38,14 +41,14 @@ async function rateLimitGuard() {
   lastRequestAt = Date.now();
 }
 
-// Helper function to add timeout to fetch requests
+// Fetch with timeout
 async function fetchWithTimeout(
   url: string,
   options: any,
-  timeout = 5000
+  timeoutMs: number
 ): Promise<Response> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -74,7 +77,11 @@ async function fetchWithRetry(
   while (true) {
     try {
       await rateLimitGuard();
-      const response = await fetchWithTimeout(url, options, 5000);
+      const response = await fetchWithTimeout(
+        url,
+        options,
+        REQUEST_TIMEOUT_MS
+      );
 
       if (response.status === 429) {
         const retryAfter = response.headers.get('retry-after');
@@ -121,12 +128,16 @@ export async function syncAllCampaigns() {
 
   console.log('\nStep 1: Getting access token...');
 
-  const authResponse = await fetch(`${API_BASE_URL}/auth/token`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${authString}`,
+  const authResponse = await fetchWithTimeout(
+    `${API_BASE_URL}/auth/token`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${authString}`,
+      },
     },
-  });
+    REQUEST_TIMEOUT_MS
+  );
 
   if (!authResponse.ok) {
     throw new Error(`Authentication failed with status ${authResponse.status}`);

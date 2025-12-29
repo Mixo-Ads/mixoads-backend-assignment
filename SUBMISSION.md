@@ -152,6 +152,22 @@ The implementation is intentionally conservative and sequential, favoring correc
 
 ---
 
+### Fix 4: Timeout policy cleanup
+
+**My approach:**
+Centralized all request timeout behavior behind a single, explicitly named configuration value. Ensured that authentication, read, and write requests share the same timeout policy for consistency and predictability.
+
+**Why this approach:**
+Timeout values are a core part of system behavior and should be explicit and easy to reason about. Centralizing the policy avoids hidden duplication and makes future tuning safer.
+
+**Trade-offs:**
+A single timeout value was chosen for simplicity. With more time, different request classes could justify distinct timeout budgets.
+
+**Code changes:**
+`src/syncCampaigns.ts`
+
+---
+
 ## Part 3: Code Structure Improvements
 
 Explain how you reorganized/refactored the code.

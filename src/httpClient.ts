@@ -1,4 +1,4 @@
-import fetch from 'node-fetch';
+import fetch from "node-fetch";
 
 export async function fetchWithTimeout(
   url: string,
@@ -13,10 +13,17 @@ export async function fetchWithTimeout(
       ...options,
       signal: controller.signal,
     });
+
+    if (response.status === 429) {
+      const retryAfter = Number(response.headers.get("retry-after") || 60);
+      await new Promise((res) => setTimeout(res, retryAfter * 1000));
+      throw new Error("Rate limited");
+    }
+
     return response;
   } catch (error: any) {
-    if (error.name === 'AbortError') {
-      throw new Error('Request timeout');
+    if (error.name === "AbortError") {
+      throw new Error("Request timeout");
     }
     throw error;
   } finally {

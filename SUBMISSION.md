@@ -1,53 +1,102 @@
 # Backend Engineer Assignment - Submission
 
-**Name:** [Your Name]  
-**Date:** [Submission Date]  
-**Time Spent:** [Honest estimate]  
-**GitHub:** [Your GitHub username]
+**Name:** Kushagra Sharma \
+**Date:** Mon, Dec 29, 2025 \
+**Time Spent:** [Honest estimate] \
+**GitHub:** TheDarkArtist
 
 ---
 
 ## Part 1: What Was Broken
 
-List the major issues you identified. For each issue, explain what was wrong and why it mattered.
+#### Issue 1: Hardcoded credentials and sensitive data logging
 
-### Issue 1: [Issue Name]
-**What was wrong:**  
-[Detailed explanation]
+**What was wrong:**
+The sync logic hardcodes API credentials directly in source code and logs both the Base64-encoded Basic Authorization header and the issued Bearer access token to stdout.
 
-**Why it mattered:**  
-[Impact on system - crashes? data loss? security? performance?]
+**Why it mattered:**
+This results in immediate credential exposure via logs and source control, violating basic security hygiene. In a real production system this would constitute a critical incident requiring key rotation and log scrubbing.
 
-**Where in the code:**  
-[File and line numbers or function names]
-
----
-
-### Issue 2: [Issue Name]
-**What was wrong:**  
-[Detailed explanation]
-
-**Why it mattered:**  
-[Impact]
-
-**Where in the code:**  
-[Location]
+**Where in the code:**
+Authentication logic and logging in `syncAllCampaigns` (`src/syncCampaigns.ts`).
 
 ---
 
-### Issue 3: [Issue Name]
-**What was wrong:**  
+#### Issue 2: Incomplete pagination leading to data loss
 
+**What was wrong:**
+The campaign fetch logic retrieves only the first page of results and ignores the pagination metadata (`has_more`, `total`). As a result, only 10 of the expected 100 campaigns are processed.
 
-**Why it mattered:**  
+**Why it mattered:**
+This causes silent data loss and incorrect business state, which is more dangerous than explicit failures because it may go unnoticed.
 
-
-**Where in the code:**  
-
+**Where in the code:**
+Campaign fetching logic in `syncAllCampaigns` (`src/syncCampaigns.ts`).
 
 ---
 
-[Continue for 5-7 major issues total]
+#### Issue 3: No rate limit handling despite explicit API constraints
+
+**What was wrong:**
+The client makes sequential API requests without any awareness of the platform’s enforced rate limit (10 requests per minute). Responses with HTTP 429 are not handled, and the `retry-after` signal is ignored.
+
+**Why it mattered:**
+Under realistic conditions the sync process will reliably exceed rate limits, resulting in cascading failures and incomplete syncs.
+
+**Where in the code:**
+All API request paths in `syncAllCampaigns` (`src/syncCampaigns.ts`).
+
+---
+
+#### Issue 4: Missing retry strategy for transient failures
+
+**What was wrong:**
+The API intentionally returns transient 503 errors and simulated timeouts, but the client does not implement retries, exponential backoff, or jitter. Failures are either thrown or logged and skipped.
+
+**Why it mattered:**
+This makes the sync process non-deterministic and unreliable, producing different results across runs for the same input.
+
+**Where in the code:**
+API request handling and sync loop in `syncAllCampaigns` (`src/syncCampaigns.ts`).
+
+---
+
+#### Issue 5: Incorrect timeout configuration
+
+**What was wrong:**
+The campaign sync endpoint intentionally responds after ~2 seconds, while the client timeout for the same request is configured to 1 second. This guarantees avoidable timeouts under normal operation.
+
+**Why it mattered:**
+Artificially short timeouts amplify failure rates and mask true performance characteristics of the system.
+
+**Where in the code:**What was wrong: Authentica
+`fetchWithTimeout` usage during campaign sync (`src/syncCampaigns.ts`).
+
+---
+
+#### Issue 6: Unsafe and inefficient database access patterns
+
+**What was wrong:**
+A new database connection pool is created per insert, queries are constructed using string interpolation, and there is no deduplication or idempotency guarantee.
+
+**Why it mattered:**
+This can lead to connection leaks, SQL injection vulnerabilities, duplicate records, and poor scalability.
+
+**Where in the code:**
+Database access logic in `saveCampaignToDB` (`src/database.ts`).
+
+---
+
+#### Issue 7: Overloaded “god function” architecture
+
+**What was wrong:**
+Authentication, API communication, retry logic, business orchestration, persistence, and logging are all implemented within a single function.
+
+**Why it mattered:**
+This tight coupling increases cognitive load, makes testing difficult, and raises the risk that fixing one issue introduces regressions elsewhere.
+
+**Where in the code:**
+`syncAllCampaigns` (`src/syncCampaigns.ts`).
 
 ---
 
@@ -57,32 +106,32 @@ For each issue above, explain your fix in detail.
 
 ### Fix 1: [Issue Name]
 
-**My approach:**  
+**My approach:**
 [What did you do to fix it?]
 
-**Why this approach:**  
+**Why this approach:**
 [Why did you choose this solution over alternatives?]
 
-**Trade-offs:**  
+**Trade-offs:**
 [What compromises did you make? What would you do differently with more time?]
 
-**Code changes:**  
+**Code changes:**
 [Link to commits, files, or specific line numbers]
 
 ---
 
 ### Fix 2: [Issue Name]
 
-**My approach:**  
+**My approach:**
 
 
-**Why this approach:**  
+**Why this approach:**
 
 
-**Trade-offs:**  
+**Trade-offs:**
 
 
-**Code changes:**  
+**Code changes:**
 
 
 ---
@@ -95,13 +144,13 @@ For each issue above, explain your fix in detail.
 
 Explain how you reorganized/refactored the code.
 
-**What I changed:**  
+**What I changed:**
 [Describe the new structure - what modules/files did you create?]
 
-**Why it's better:**  
+**Why it's better:**
 [Improved testability? Separation of concerns? Reusability?]
 
-**Architecture decisions:**  
+**Architecture decisions:**
 [Any patterns you used? Class-based? Functional? Why?]
 
 ---
@@ -115,13 +164,13 @@ How did you verify your fixes work?
 2. [Scenario 2 - e.g., "Made 20 requests to test rate limiting"]
 3. [etc.]
 
-**Expected behavior:**  
+**Expected behavior:**
 [What should happen when it works correctly?]
 
-**Actual results:**  
+**Actual results:**
 [What happened when you tested?]
 
-**Edge cases tested:**  
+**Edge cases tested:**
 [What unusual scenarios did you test?]
 
 ---
@@ -151,18 +200,59 @@ What would you add/change before deploying this to production?
 
 Be honest about what's still not perfect.
 
-**Current limitations:**  
+**Current limitations:**
 [What's still not production-ready?]
 
-**What I'd do with more time:**  
+**What I'd do with more time:**
 [If you had another 5 hours, what would you improve?]
 
-**Questions I have:**  
+**Questions I have:**
 [Anything you're unsure about or would want to discuss?]
 
 ---
 
 ## Part 7: How to Run My Solution
+Mixo Ads - Backend Challenge
+About Mixo Ads
+Mixo Ads is transforming AI-driven advertising for multi-location brands. We partner with major U.S. companies and government organizations to automate and optimize ad campaigns at scale.We're a lean, high-impact startup where speed, creativity, and experimentation matter. If you enjoy building data-heavy products and turning complex data into elegant UI, we'd love to see what you build.
+Please find the details of the technical assignment below
+Questions: hari@mixoads.com
+ASSIGNMENT DETAILS
+Repository: https://github.com/Mixo-Ads/mixoads-backend-assignment
+Time Estimate: 4-5 hours
+HOW TO SUBMIT
+
+1. Fork the repository
+  - Visit: https://github.com/Mixo-Ads/mixoads-backend-assignment
+  - Click "Fork" button (top right)
+2. Clone your fork
+  git clone https://github.com/YOUR_USERNAME/mixoads-backend-assignment.git
+  cd mixoads-backend-assignment
+3. Follow setup instructions in README.md
+  - Install dependencies
+  - Start the mock API
+  - Run the broken code
+  - Identify what's wrong
+4. Fix the issues and complete SUBMISSION.md
+  - Fix critical bugs
+  - Improve code structure
+  - Document your approach thoroughly
+5. Push your changes to your fork
+  git add .
+  git commit -m "Fix bugs and improve structure"
+  git push origin main
+6. Submit Pull Request
+  - Go back to: https://github.com/Mixo-Ads/mixoads-backend-assignment
+  - Click "Pull requests" → "New pull request"
+  - Click "compare across forks"
+  - Select your fork as the source
+  - Title: "Backend Engineer Assignment - [Your Name]"
+  - Submit PR
+IMPORTANT NOTES
+- Use any tools you normally use at work (ChatGPT, Claude, Copilot, Stack Overflow, documentation)
+- We're testing your problem-solving approach and understanding, not memorization
+- After submission, selected candidates will have a 30-45 minute technical review call to discuss your solution
+- We'll walk through your code, discuss design decisions, and talk about trade-offs
 
 Clear step-by-step instructions.
 

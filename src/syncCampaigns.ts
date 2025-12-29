@@ -73,8 +73,8 @@ async function retryWithBackoff<T>(
 export async function syncAllCampaigns() {
   console.log('Syncing campaigns from Ad Platform...\n');
 
-  const email = "admin@mixoads.com";
-  const password = "SuperSecret123!";
+  const email = process.env.AD_PLATFORM_EMAIL;
+  const password = process.env.AD_PLATFORM_PASSWORD;
 
   const authString = Buffer.from(`${email}:${password}`).toString('base64');
 
@@ -96,26 +96,50 @@ export async function syncAllCampaigns() {
 
   console.log('\nStep 2: Fetching campaigns...');
 
-  const campaignsResponse = await fetch(`${API_BASE_URL}/api/campaigns?page=1&limit=${PAGE_SIZE}`, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`
-    }
-  });
+  let page = 1;
+  let hasMore = true;
+  const allCampaigns: Campaign[] = [];
 
-  if (!campaignsResponse.ok) {
-    throw new Error(`API returned ${campaignsResponse.status}: ${campaignsResponse.statusText}`);
+  while (hasMore) {
+    console.log(`Fetching page ${page}...`);
+
+    const campaignsData: any = await retryWithBackoff(async () => {
+      const response = await fetchWithTimeout(
+        `${API_BASE_URL}/api/campaigns?page=${page}&limit=${PAGE_SIZE}`,
+        { headers: { 'Authorization': `Bearer ${accessToken}` } },
+        5000
+      );
+
+      if (response.status === 429) {
+        const data = await response.json();
+        const error: any = new Error('Rate limit');
+        error.status = 429;
+        error.retry_after = data.retry_after;
+        throw error;
+      }
+
+      if (response.status === 503) {
+        const error: any = new Error('Service unavailable');
+        error.status = 503;
+        throw error;
+      }
+
+      return await response.json();
+    });
+
+    console.log(`  Found ${campaignsData.data.length} campaigns on page ${page}`);
+    allCampaigns.push(...campaignsData.data);
+
+    hasMore = campaignsData.pagination.has_more; // fetch campaigns while has_more is true
+    page++;
   }
-
-  const campaignsData: any = await campaignsResponse.json();
-
-  console.log(`Found ${campaignsData.data.length} campaigns`);
-  console.log(`Pagination: page ${campaignsData.pagination.page}, has_more: ${campaignsData.pagination.has_more}`);
+  console.log(`\nTotal campaigns fetched: ${allCampaigns.length}`);
 
   console.log('\nStep 3: Syncing campaigns to database...');
 
   let successCount = 0;
 
-  for (const campaign of campaignsData.data) {
+  for (const campaign of allCampaigns) {
     console.log(`\n   Syncing: ${campaign.name} (ID: ${campaign.id})`);
 
     try {
@@ -160,6 +184,6 @@ export async function syncAllCampaigns() {
   }
 
   console.log('\n' + '='.repeat(60));
-  console.log(`Sync complete: ${successCount}/${campaignsData.data.length} campaigns synced`);
+  console.log(`Sync complete: ${successCount}/${allCampaigns.length} campaigns synced`);
   console.log('='.repeat(60));
 }

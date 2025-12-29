@@ -1,7 +1,7 @@
 const express = require('express');
 const app = express();
 
-const requestCounts = new Map();
+const requestCounts = new Map();// As this is mock API we can ignore this. I am expecting we are using better way to handle rate limiting. API will be memory intensive if we use this in production.
 const RATE_LIMIT = 10;
 const RATE_WINDOW = 60000;
 

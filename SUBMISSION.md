@@ -186,16 +186,31 @@ This solution assumes a uniqueness constraint on `campaigns.id`. Schema migratio
 
 ## Part 3: Code Structure Improvements
 
-Explain how you reorganized/refactored the code.
+### Structural refactor: Decomposing the sync workflow
 
 **What I changed:**
-[Describe the new structure - what modules/files did you create?]
+Split the monolithic sync function into focused, single-purpose units:
+- `getAccessToken` for authentication
+- `fetchAllCampaigns` for pagination
+- `syncCampaign` for per-campaign execution
+
+The main `syncAllCampaigns` function now acts as a thin orchestrator.
 
 **Why it's better:**
-[Improved testability? Separation of concerns? Reusability?]
+This reduces cognitive load, makes individual behaviors easier to test in isolation, and limits the blast radius of future changes. The refactor preserves existing behavior while improving clarity.
 
 **Architecture decisions:**
-[Any patterns you used? Class-based? Functional? Why?]
+Chose functional decomposition over new abstractions or class hierarchies to keep the system simple and explicit.
+
+---
+
+### Why I did not split the code into multiple files
+
+Although the sync logic was decomposed into clear, single-responsibility units, I intentionally avoided file-level modularization at this stage.
+
+File boundaries represent a long-term API commitment. In the context of a single-purpose sync job with one execution path and no current reuse pressure, introducing additional files would add indirection without reducing complexity. Keeping the logic co-located preserves readability, makes control flow easy to follow, and minimizes speculative abstraction.
+
+If this code were to be reused by multiple jobs, shared with a web service, or expanded with additional sync strategies, the existing functional boundaries make it straightforward to extract stable modules into separate files without refactoring behavior.
 
 ---
 

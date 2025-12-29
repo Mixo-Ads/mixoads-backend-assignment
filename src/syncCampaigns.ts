@@ -12,7 +12,7 @@ const REQUEST_TIMEOUT_MS = 5000;
 const MIN_REQUEST_INTERVAL_MS = 6000;
 let lastRequestAt = 0;
 
-// Type definitions for campaigns
+// Type definitions
 interface Campaign {
   id: string;
   name: string;
@@ -24,12 +24,14 @@ interface Campaign {
   created_at: string;
 }
 
-// Sleep helper
+// -----------------
+// Shared utilities
+// -----------------
+
 async function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Enforce client-side request pacing
 async function rateLimitGuard() {
   const now = Date.now();
   const elapsed = now - lastRequestAt;
@@ -41,7 +43,6 @@ async function rateLimitGuard() {
   lastRequestAt = Date.now();
 }
 
-// Fetch with timeout
 async function fetchWithTimeout(
   url: string,
   options: any,
@@ -65,7 +66,6 @@ async function fetchWithTimeout(
   }
 }
 
-// Fetch with retry + backoff + rate limiting
 async function fetchWithRetry(
   url: string,
   options: any,
@@ -114,9 +114,11 @@ async function fetchWithRetry(
   }
 }
 
-export async function syncAllCampaigns() {
-  console.log('Syncing campaigns from Ad Platform...\n');
+// -----------------
+// Capability units
+// -----------------
 
+async function getAccessToken(): Promise<string> {
   const email = process.env.AD_PLATFORM_EMAIL;
   const password = process.env.AD_PLATFORM_PASSWORD;
 
@@ -126,9 +128,7 @@ export async function syncAllCampaigns() {
 
   const authString = Buffer.from(`${email}:${password}`).toString('base64');
 
-  console.log('\nStep 1: Getting access token...');
-
-  const authResponse = await fetchWithTimeout(
+  const response = await fetchWithTimeout(
     `${API_BASE_URL}/auth/token`,
     {
       method: 'POST',
@@ -139,22 +139,20 @@ export async function syncAllCampaigns() {
     REQUEST_TIMEOUT_MS
   );
 
-  if (!authResponse.ok) {
-    throw new Error(`Authentication failed with status ${authResponse.status}`);
+  if (!response.ok) {
+    throw new Error(`Authentication failed with status ${response.status}`);
   }
 
-  const authData: any = await authResponse.json();
-  const accessToken = authData.access_token;
-
-  if (!accessToken) {
-    throw new Error('Authentication response did not include access token');
+  const data: any = await response.json();
+  if (!data.access_token) {
+    throw new Error('Authentication response missing access token');
   }
 
-  console.log('Access token obtained successfully');
+  return data.access_token;
+}
 
-  console.log('\nStep 2: Fetching campaigns...');
-
-  let allCampaigns: Campaign[] = [];
+async function fetchAllCampaigns(accessToken: string): Promise<Campaign[]> {
+  let campaigns: Campaign[] = [];
   let page = 1;
   let hasMore = true;
 
@@ -175,37 +173,57 @@ export async function syncAllCampaigns() {
     }
 
     const data: any = await response.json();
-
-    allCampaigns.push(...data.data);
+    campaigns.push(...data.data);
     hasMore = data.pagination.has_more;
     page++;
   }
 
-  console.log(`Fetched ${allCampaigns.length} campaigns in total`);
+  return campaigns;
+}
 
-  console.log('\nStep 3: Syncing campaigns to database...');
+async function syncCampaign(
+  campaign: Campaign,
+  accessToken: string
+): Promise<void> {
+  const response = await fetchWithRetry(
+    `${API_BASE_URL}/api/campaigns/${campaign.id}/sync`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ campaign_id: campaign.id }),
+    }
+  );
 
+  await response.json();
+  await saveCampaignToDB(campaign);
+}
+
+// -----------------
+// Orchestrator
+// -----------------
+
+export async function syncAllCampaigns() {
+  console.log('Syncing campaigns from Ad Platform...\n');
+
+  console.log('Step 1: Authenticating...');
+  const accessToken = await getAccessToken();
+  console.log('Access token obtained');
+
+  console.log('\nStep 2: Fetching campaigns...');
+  const campaigns = await fetchAllCampaigns(accessToken);
+  console.log(`Fetched ${campaigns.length} campaigns`);
+
+  console.log('\nStep 3: Syncing campaigns...');
   let successCount = 0;
 
-  for (const campaign of allCampaigns) {
-    console.log(`\n   Syncing: ${campaign.name} (ID: ${campaign.id})`);
+  for (const campaign of campaigns) {
+    console.log(`\n   Syncing: ${campaign.name} (${campaign.id})`);
 
     try {
-      const syncResponse = await fetchWithRetry(
-        `${API_BASE_URL}/api/campaigns/${campaign.id}/sync`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ campaign_id: campaign.id }),
-        }
-      );
-
-      await syncResponse.json();
-      await saveCampaignToDB(campaign);
-
+      await syncCampaign(campaign, accessToken);
       successCount++;
       console.log(`   Successfully synced ${campaign.name}`);
     } catch (error: any) {
@@ -218,7 +236,7 @@ export async function syncAllCampaigns() {
 
   console.log('\n' + '='.repeat(60));
   console.log(
-    `Sync complete: ${successCount}/${allCampaigns.length} campaigns synced`
+    `Sync complete: ${successCount}/${campaigns.length} campaigns synced`
   );
   console.log('='.repeat(60));
 }

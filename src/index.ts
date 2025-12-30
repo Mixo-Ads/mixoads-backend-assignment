@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import { syncAllCampaigns } from './syncCampaigns';
+import { syncAllCampaigns } from './syncService';
 
 dotenv.config();
 

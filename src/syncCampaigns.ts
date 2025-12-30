@@ -1,4 +1,4 @@
-import fetch from "node-fetch";
+import { getAccessToken } from "./authService";
 import { saveCampaignToDB } from "./database";
 import { fetchWithTimeout } from "./httpClient";
 import { retry } from "./retry";
@@ -62,33 +62,8 @@ async function fetchAllCampaigns(accessToken: string): Promise<Campaign[]> {
 export async function syncAllCampaigns() {
   console.log("Syncing campaigns from Ad Platform...\n");
 
-  const email = process.env.AD_PLATFORM_EMAIL;
-  const password = process.env.AD_PLATFORM_PASSWORD;
-
-  if (!email || !password) {
-    throw new Error("Missing Ad Platform credentials");
-  }
-  const authString = Buffer.from(`${email}:${password}`).toString("base64");
-
-  console.log("\nStep 1: Getting access token...");
-
-  const authResponse = await retry(() =>
-    fetchWithTimeout(
-      `${API_BASE_URL}/auth/token`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Basic ${authString}`,
-        },
-      },
-      3000
-    )
-  );
-  if (!authResponse.ok) {
-    throw new Error(`Auth failed: ${authResponse.status}`);
-  }
-  const authData: any = await authResponse.json();
-  const accessToken = authData.access_token;
+  console.log("Step 1: Getting access token...");
+  const accessToken = await getAccessToken();
 
   // Fetch ALL campaigns (pagination fixed)
   console.log("\nStep 2: Fetching all campaigns...");

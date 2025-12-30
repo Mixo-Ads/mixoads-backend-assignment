@@ -500,5 +500,17 @@ Sync complete: 100/100
  - Test timeout and retry behavior
  - Mock API simulates random 503 errors and timeouts automatically
 
-
+### Commit history
+   - 8b6722a updated submission.md
+   - 65636a8 Add pagination progress logging for campaign fetch
+   - 4cfcd82 Harden database layer with pooling and upsert
+   - de72bc4 Add controlled concurrency to campaign sync
+   - d33f2fa Refactor campaign sync into API and sync services
+   - b54054e Extract authentication logic into auth service
+   - ebb7b55 Fix pagination to fetch all campaigns from ad platform
+   - a4afa65 Handle API rate limiting using retry-after header
+   - fe8d365 Add retry logic with exponential backoff for transient failures
+   - 297b934 Extract HTTP timeout logic into reusable http client
+   - 0ac41da Move ad platform credentials to env and stop logging secrets
+   - 6897ebd Initial commit: Backend assignment starter code
 

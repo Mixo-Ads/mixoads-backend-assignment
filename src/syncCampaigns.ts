@@ -19,6 +19,46 @@ interface Campaign {
   created_at: string;
 }
 
+/**
+ * Fetch ALL campaigns using pagination
+ * This fixes the "only first 10 campaigns" bug
+ */
+async function fetchAllCampaigns(accessToken: string): Promise<Campaign[]> {
+  let page = 1;
+  const allCampaigns: Campaign[] = [];
+
+  while (true) {
+    const response = await retry(async () => {
+      const res = await fetchWithTimeout(
+        `${API_BASE_URL}/api/campaigns?page=${page}&limit=${PAGE_SIZE}`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        },
+        3000
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Fetch campaigns failed (${res.status}): ${text}`);
+      }
+
+      return res;
+    });
+
+    const data = await response.json();
+
+    allCampaigns.push(...data.data);
+
+    if (!data.pagination.has_more) {
+      break;
+    }
+    page++;
+  }
+  return allCampaigns;
+}
+
 export async function syncAllCampaigns() {
   console.log("Syncing campaigns from Ad Platform...\n");
 
@@ -50,35 +90,17 @@ export async function syncAllCampaigns() {
   const authData: any = await authResponse.json();
   const accessToken = authData.access_token;
 
-  console.log("\nStep 2: Fetching campaigns...");
+  // Fetch ALL campaigns (pagination fixed)
+  console.log("\nStep 2: Fetching all campaigns...");
+  const campaigns = await fetchAllCampaigns(accessToken);
 
-  const campaignsResponse = await fetch(
-    `${API_BASE_URL}/api/campaigns?page=1&limit=${PAGE_SIZE}`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
-  );
-
-  if (!campaignsResponse.ok) {
-    throw new Error(
-      `API returned ${campaignsResponse.status}: ${campaignsResponse.statusText}`
-    );
-  }
-
-  const campaignsData: any = await campaignsResponse.json();
-
-  console.log(`Found ${campaignsData.data.length} campaigns`);
-  console.log(
-    `Pagination: page ${campaignsData.pagination.page}, has_more: ${campaignsData.pagination.has_more}`
-  );
+  console.log(`Found ${campaigns.length} campaigns`);
 
   console.log("\nStep 3: Syncing campaigns to database...");
 
   let successCount = 0;
 
-  for (const campaign of campaignsData.data) {
+  for (const campaign of campaigns) {
     console.log(`\n   Syncing: ${campaign.name} (ID: ${campaign.id})`);
 
     try {
@@ -104,7 +126,7 @@ export async function syncAllCampaigns() {
         return res;
       });
 
-      const syncData: any = await syncResponse.json();
+      await syncResponse.json();
 
       await saveCampaignToDB(campaign);
 
@@ -117,7 +139,7 @@ export async function syncAllCampaigns() {
 
   console.log("\n" + "=".repeat(60));
   console.log(
-    `Sync complete: ${successCount}/${campaignsData.data.length} campaigns synced`
+    `Sync complete: ${successCount}/${campaigns.length} campaigns synced`
   );
   console.log("=".repeat(60));
 }

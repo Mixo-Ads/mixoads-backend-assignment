@@ -27,6 +27,8 @@ export async function fetchAllCampaigns(
   const campaigns: Campaign[] = [];
 
   while (true) {
+    console.log(`Fetching page ${page}...`);
+
     const response = await retry(async () => {
       const res = await fetchWithTimeout(
         `${API_BASE_URL}/api/campaigns?page=${page}&limit=${PAGE_SIZE}`,
@@ -47,6 +49,10 @@ export async function fetchAllCampaigns(
 
     const data = await response.json();
     campaigns.push(...data.data);
+
+    console.log(
+      `Page ${page} fetched (${campaigns.length}/${data.pagination.total})`
+    );
 
     if (!data.pagination.has_more) break;
     page++;

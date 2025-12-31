@@ -3,7 +3,7 @@
 **Name:** Faizudheen M  
 **Date:** 2025-12-31  
 **Time Spent:** ~8 hours  
-**GitHub:** Faizudheen
+**GitHub:** [Faizudheen](https://github.com/Faizudheen)
 
 ---
 

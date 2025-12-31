@@ -1,7 +1,6 @@
-import dotenv from 'dotenv';
+import 'dotenv/config';
 import { syncAllCampaigns } from './syncCampaigns';
 
-dotenv.config();
 
 async function main() {
   console.log('Starting campaign sync...');

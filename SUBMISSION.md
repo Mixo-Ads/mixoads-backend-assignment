@@ -1,9 +1,9 @@
 # Backend Engineer Assignment - Submission
 
-**Name:** [Your Name]  
-**Date:** [Submission Date]  
-**Time Spent:** [Honest estimate]  
-**GitHub:** [Your GitHub username]
+**Name:** Soumen Sarkar
+**Date:** 31/12/2025
+**Time Spent:** 4-5 Hrs
+**GitHub:** https://github.com/soumens7
 
 ---
 
@@ -11,43 +11,81 @@
 
 List the major issues you identified. For each issue, explain what was wrong and why it mattered.
 
-### Issue 1: [Issue Name]
+### Issue 1: Hardcoded & Insecure Authentication
+
 **What was wrong:**  
-[Detailed explanation]
+API credentials (email/password) were hardcoded in the source code and printed to logs during execution.
 
 **Why it mattered:**  
-[Impact on system - crashes? data loss? security? performance?]
+This is a serious security risk. Credentials could leak via logs, source control, or CI systems, and it makes rotating secrets impossible.
 
 **Where in the code:**  
-[File and line numbers or function names]
+src/syncCampaigns.ts – authentication logic inside syncAllCampaigns
 
 ---
 
-### Issue 2: [Issue Name]
+### Issue 2: Pagination Was Broken
+
 **What was wrong:**  
-[Detailed explanation]
+The sync only fetched the first page (10 campaigns) even though the API contained 100 campaigns and provided pagination metadata.
 
 **Why it mattered:**  
-[Impact]
+90% of campaign data was never synced, leading to incomplete and incorrect data.
 
 **Where in the code:**  
-[Location]
+src/syncCampaigns.ts – hardcoded request to page=1
 
 ---
 
-### Issue 3: [Issue Name]
-**What was wrong:**  
+### Issue 3: No Rate Limit Handling
 
+**What was wrong:**  
+The Ad Platform API enforces a strict 10 requests/min limit. The code did not handle HTTP 429 responses.
 
 **Why it mattered:**  
-
+Once the limit was exceeded, the sync would fail randomly and repeatedly.
 
 **Where in the code:**  
-
+All API fetch calls in syncCampaigns.ts
 
 ---
 
-[Continue for 5-7 major issues total]
+### Issue 4: No Retry Logic for Transient Failures
+
+**What was wrong:**  
+The API randomly returns 503 errors and timeouts, but the code did not retry failed requests.
+
+**Why it mattered:**  
+Temporary network or service issues caused permanent sync failures.
+
+**Where in the code:**  
+Campaign list fetch and campaign sync logic
+
+---
+
+### Issue 5: Timeout Handling Was Incorrect
+
+**What was wrong:**  
+The campaign sync endpoint intentionally takes ~2 seconds, but the timeout was set too low.
+
+**Why it mattered:**  
+Valid sync requests were aborted prematurely, causing false failures.
+
+**Where in the code:**  
+fetchWithTimeout usage in campaign sync
+
+---
+
+### Issue 6: Database Safety & Mocking
+
+**What was wrong:**  
+Database writes were attempted even during testing. The USE_MOCK_DB flag was not working because .env was not loaded correctly.
+
+**Why it mattered:**  
+Caused database errors during testing and made local development harder.
+
+**Where in the code:**  
+src/database.ts, .env loading in index.ts
 
 ---
 
@@ -55,39 +93,99 @@ List the major issues you identified. For each issue, explain what was wrong and
 
 For each issue above, explain your fix in detail.
 
-### Fix 1: [Issue Name]
+### Fix 1: Authentication
 
 **My approach:**  
-[What did you do to fix it?]
+Moved credentials to environment variables and removed sensitive logging.
 
 **Why this approach:**  
-[Why did you choose this solution over alternatives?]
+This matches real production practices and allows secure secret rotation.
 
 **Trade-offs:**  
-[What compromises did you make? What would you do differently with more time?]
+None — this is strictly better.
 
 **Code changes:**  
-[Link to commits, files, or specific line numbers]
+syncCampaigns.ts, .env, index.ts
 
 ---
 
-### Fix 2: [Issue Name]
+### Fix 2: Pagination
 
 **My approach:**  
-
+Implemented a loop that fetches campaigns page-by-page until has_more === false.
 
 **Why this approach:**  
-
+It uses the API’s intended pagination mechanism and guarantees complete data.
 
 **Trade-offs:**  
-
+More requests → required proper rate-limit handling.
 
 **Code changes:**  
-
+fetchAllCampaigns() in syncCampaigns.ts
 
 ---
 
-[Continue for all fixes]
+### Fix 3: Rate Limiting
+
+**My approach:**  
+Handled HTTP 429 responses using the Retry-After header, with a capped delay for local testing.
+
+**Why this approach:**  
+Respects server instructions while keeping the job moving during development.
+
+**Trade-offs:**  
+In production, I would not cap the delay.
+
+**Code changes:**  
+Campaign fetch & sync retry logic
+
+---
+
+### Fix 4: Retry Logic
+
+**My approach:**  
+Added retries for transient failures (429, 503, timeouts) with small backoffs.
+
+**Why this approach:**  
+Transient failures are expected in real APIs and should not fail the entire job.
+
+**Trade-offs:**  
+Retries increase runtime but improve reliability.
+
+**Code changes:**  
+Retry loops around fetch & sync calls
+
+---
+
+### Fix 5: Timeout Handling
+
+**My approach:**
+Used AbortController and increased sync timeout to 3000ms.
+
+**Why this approach:**
+Matches the API’s actual behavior (2s delay).
+
+**Trade-offs:**
+Slightly slower failure detection.
+
+**Code changes:**
+fetchWithTimeout usage
+
+---
+
+### Fix 6: Database & Mock Mode
+
+**My approach:**
+Ensured .env loads from project root and made USE_MOCK_DB reliably skip DB writes.
+
+**Why this approach:**
+Allows fast, safe testing without a real database.
+
+**Trade-offs:**
+Mock DB only logs instead of persisting data.
+
+**Code changes:**
+database.ts, .env placement, index.ts
 
 ---
 
@@ -96,13 +194,13 @@ For each issue above, explain your fix in detail.
 Explain how you reorganized/refactored the code.
 
 **What I changed:**  
-[Describe the new structure - what modules/files did you create?]
+ - Separated pagination logic into its own function - Centralized retry and timeout handling - Removed duplicated logic - Improved logging clarity
 
 **Why it's better:**  
-[Improved testability? Separation of concerns? Reusability?]
+ - Easier to debug - Easier to extend - Logic is testable in isolation
 
 **Architecture decisions:**  
-[Any patterns you used? Class-based? Functional? Why?]
+Used simple functional modules instead of over-engineering with classes.
 
 ---
 
@@ -111,18 +209,27 @@ Explain how you reorganized/refactored the code.
 How did you verify your fixes work?
 
 **Test scenarios I ran:**
-1. [Scenario 1 - e.g., "Ran sync 10 times to test reliability"]
-2. [Scenario 2 - e.g., "Made 20 requests to test rate limiting"]
-3. [etc.]
+
+1. Full sync of all 100 campaigns
+2. Multiple runs to confirm retry stability
+3. Forced rate-limit scenarios
+4. Timeout and 503 simulations
+5. Mock DB verification
 
 **Expected behavior:**  
-[What should happen when it works correctly?]
+ • All campaigns fetched
+• Sync completes without crashing
+• Transient failures recover automatically
 
 **Actual results:**  
-[What happened when you tested?]
+ • 100 campaigns fetched and synced
+• No crashes
+• Stable behavior across runs
 
 **Edge cases tested:**  
-[What unusual scenarios did you test?]
+ • Rate limit bursts
+• API timeouts
+• Service unavailable responses
 
 ---
 
@@ -131,19 +238,32 @@ How did you verify your fixes work?
 What would you add/change before deploying this to production?
 
 ### Monitoring & Observability
-[What metrics would you track? What alerts would you set up?]
+
+    •	Metrics: sync duration, failure count, retry count
+    •	Alerts on repeated failures or long runtimes
 
 ### Error Handling & Recovery
-[What additional error handling would you add?]
+
+    •	Dead-letter queue for failed campaigns
+    •	Resume from last successful campaign
 
 ### Scaling Considerations
-[How would this handle 100+ clients? What would break first?]
+
+    •	Queue-based sync (BullMQ / SQS)
+    •	Controlled concurrency
+    •	Token caching
 
 ### Security Improvements
-[What security enhancements would you add?]
+
+    •	Secrets manager
+    •	Remove stack traces from responses
+    •	Encrypted DB connections
 
 ### Performance Optimizations
-[What could be made faster or more efficient?]
+
+    •	Batch inserts
+    •	Limited parallel syncs
+    •	Connection pooling reuse
 
 ---
 
@@ -152,14 +272,17 @@ What would you add/change before deploying this to production?
 Be honest about what's still not perfect.
 
 **Current limitations:**  
-[What's still not production-ready?]
+	•	Sequential syncing (intentionally for safety)
+	•	No automated tests
 
 **What I'd do with more time:**  
-[If you had another 5 hours, what would you improve?]
+	•	Add unit tests
+	•	Add concurrency with limits
+	•	Add structured logging
 
 **Questions I have:**  
-[Anything you're unsure about or would want to discuss?]
-
+	•	Expected sync frequency?
+	•	SLA for data freshness?
 ---
 
 ## Part 7: How to Run My Solution
@@ -167,32 +290,42 @@ Be honest about what's still not perfect.
 Clear step-by-step instructions.
 
 ### Setup
+
 ```bash
-# Step-by-step commands
+npm install
+cd mock-api && npm install
 ```
 
 ### Running
+
 ```bash
-# How to start everything
+cd mock-api && npm start
+npm start
 ```
 
 ### Expected Output
+
 ```
-# What should you see when it works?
+Fetched 100 campaigns
+[MOCK DB] Saved campaign: campaign_1
+...
+Sync complete: 100/100 campaigns synced
+
+Sync completed successfully!
 ```
 
 ### Testing
+
 ```bash
-# How to verify it's working correctly
+Run multiple times to observe retry & rate-limit handling
 ```
 
 ---
 
 ## Part 8: Additional Notes
 
-Any other context, thoughts, or reflections on the assignment.
-
-[Your thoughts here]
+This assignment closely resembles real-world third-party API integrations.
+My focus was reliability, correctness, and clarity rather than over-engineering.
 
 ---
 

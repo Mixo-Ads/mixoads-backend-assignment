@@ -11,7 +11,8 @@ async function getDB() {
 }
 
 export async function saveCampaignToDB(campaign: any) {
-  if (process.env.USE_MOCK_DB === 'true') {
+  console.log('USE_MOCK_DB =', process.env.USE_MOCK_DB);
+  if (String(process.env.USE_MOCK_DB).toLowerCase() === 'true') {
     console.log(`      [MOCK DB] Saved campaign: ${campaign.id}`);
     return;
   }

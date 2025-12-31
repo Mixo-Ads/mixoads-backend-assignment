@@ -1,209 +1,319 @@
-# Backend Engineer Assignment - Submission
+Name: Mani Pal
+Date: 31 Jan 2025
+Time Spent: ~30–40 minutes
+GitHub: https://github.com/justbytecode
 
-**Name:** [Your Name]  
-**Date:** [Submission Date]  
-**Time Spent:** [Honest estimate]  
-**GitHub:** [Your GitHub username]
+Part 1: What Was Broken
 
----
+This system intentionally simulates real-world ad platform constraints. Several production-critical issues prevented reliable syncing.
 
-## Part 1: What Was Broken
+Issue 1: Campaign Sync Only Fetches First Page
 
-List the major issues you identified. For each issue, explain what was wrong and why it mattered.
+What was wrong:
+The sync logic fetched only page 1 of campaigns:
 
-### Issue 1: [Issue Name]
-**What was wrong:**  
-[Detailed explanation]
+/api/campaigns?page=1&limit=10
 
-**Why it mattered:**  
-[Impact on system - crashes? data loss? security? performance?]
 
-**Where in the code:**  
-[File and line numbers or function names]
+Pagination (has_more) was logged but never used, resulting in only 10 out of 100 campaigns being synced.
 
----
+Why it mattered:
+90% of campaign data was silently ignored. In a real ad system, this would cause massive reporting gaps and billing errors.
 
-### Issue 2: [Issue Name]
-**What was wrong:**  
-[Detailed explanation]
+Where in the code:
+src/syncCampaigns.ts – campaign fetch logic
 
-**Why it mattered:**  
-[Impact]
+Issue 2: No Handling for Rate Limiting (429)
 
-**Where in the code:**  
-[Location]
+What was wrong:
+The mock API enforces 10 requests per minute per client, but the sync loop made sequential API calls without backoff or retry logic.
 
----
+Why it mattered:
+Once the rate limit was hit, requests failed permanently. The sync would partially complete with no recovery.
 
-### Issue 3: [Issue Name]
-**What was wrong:**  
+Where in the code:
+src/syncCampaigns.ts – campaign sync loop
+Mock behavior defined in mock-api/server.js
 
+Issue 3: Token Expiry Breaks Long-Running Syncs
 
-**Why it mattered:**  
+What was wrong:
+Access tokens expire after 1 hour, but the backend:
 
+Did not track issued_at
 
-**Where in the code:**  
+Did not refresh tokens
 
+Treated 401 Token expired as a fatal error
 
----
+Why it mattered:
+Any long-running or scheduled sync would fail unpredictably and require manual restart.
 
-[Continue for 5-7 major issues total]
+Where in the code:
+src/syncCampaigns.ts – authentication handling
+Mock behavior in mock-api/server.js
 
----
+Issue 4: No Retry Strategy for 503 Errors and Timeouts
 
-## Part 2: How I Fixed It
+What was wrong:
+The API intentionally returns:
 
-For each issue above, explain your fix in detail.
+503 errors (20% of requests)
 
-### Fix 1: [Issue Name]
+Silent timeouts (10% of requests)
 
-**My approach:**  
-[What did you do to fix it?]
+The client:
 
-**Why this approach:**  
-[Why did you choose this solution over alternatives?]
+Did not retry
 
-**Trade-offs:**  
-[What compromises did you make? What would you do differently with more time?]
+Failed immediately on timeout
 
-**Code changes:**  
-[Link to commits, files, or specific line numbers]
+Logged errors but continued inconsistently
 
----
+Why it mattered:
+Transient failures caused permanent data loss. This is unacceptable in ingestion pipelines.
 
-### Fix 2: [Issue Name]
+Where in the code:
+fetchWithTimeout and sync loop in src/syncCampaigns.ts
 
-**My approach:**  
+Issue 5: Unsafe SQL Query Construction
 
+What was wrong:
+SQL queries were built using string interpolation:
 
-**Why this approach:**  
+VALUES ('${campaign.id}', '${campaign.name}', ...)
 
 
-**Trade-offs:**  
+Why it mattered:
+This is vulnerable to SQL injection and breaks on malformed strings. It also prevents query plan reuse.
 
+Where in the code:
+src/database.ts
 
-**Code changes:**  
+Issue 6: Database Connections Created Per Write
 
+What was wrong:
+A new Pool instance was created on every database write.
 
----
+Why it mattered:
+This does not scale and can exhaust database connections under load.
 
-[Continue for all fixes]
+Where in the code:
+getDB() in src/database.ts
 
----
+Issue 7: Lack of Observability and Sync Metrics
 
-## Part 3: Code Structure Improvements
+What was wrong:
+Logs were unstructured and provided no summary of:
 
-Explain how you reorganized/refactored the code.
+Failures by type
 
-**What I changed:**  
-[Describe the new structure - what modules/files did you create?]
+Retry counts
 
-**Why it's better:**  
-[Improved testability? Separation of concerns? Reusability?]
+Rate-limit events
 
-**Architecture decisions:**  
-[Any patterns you used? Class-based? Functional? Why?]
+Token refreshes
 
----
+Why it mattered:
+Operational visibility was extremely limited. Debugging production incidents would be difficult.
 
-## Part 4: Testing & Verification
+Where in the code:
+Sync orchestration and logging throughout src/syncCampaigns.ts
 
-How did you verify your fixes work?
+Part 2: How I Fixed It
+Fix 1: Full Pagination Support
 
-**Test scenarios I ran:**
-1. [Scenario 1 - e.g., "Ran sync 10 times to test reliability"]
-2. [Scenario 2 - e.g., "Made 20 requests to test rate limiting"]
-3. [etc.]
+My approach:
+Implemented pagination handling using has_more and page counters to fetch all 10 pages (100 campaigns).
 
-**Expected behavior:**  
-[What should happen when it works correctly?]
+Why this approach:
+Matches the API contract and ensures completeness.
 
-**Actual results:**  
-[What happened when you tested?]
+Trade-offs:
+Sequential pagination for clarity. Could be parallelized later.
 
-**Edge cases tested:**  
-[What unusual scenarios did you test?]
+Code changes:
+Campaign fetch loop in src/syncCampaigns.ts
 
----
+Fix 2: Rate Limit-Aware Syncing
 
-## Part 5: Production Considerations
+My approach:
+Detected 429 responses and respected retry_after before retrying requests.
 
-What would you add/change before deploying this to production?
+Why this approach:
+Prevents API blocking and aligns with real ad platform behavior.
 
-### Monitoring & Observability
-[What metrics would you track? What alerts would you set up?]
+Trade-offs:
+Basic wait-based backoff. Adaptive strategies could be added later.
 
-### Error Handling & Recovery
-[What additional error handling would you add?]
+Fix 3: Token Refresh Handling
 
-### Scaling Considerations
-[How would this handle 100+ clients? What would break first?]
+My approach:
+Tracked token issue time and refreshed automatically on expiry or 401 Token expired.
 
-### Security Improvements
-[What security enhancements would you add?]
+Why this approach:
+Allows long-running and scheduled syncs without human intervention.
 
-### Performance Optimizations
-[What could be made faster or more efficient?]
+Trade-offs:
+Synchronous refresh for simplicity.
 
----
+Fix 4: Retry Logic for 503s and Timeouts
 
-## Part 6: Limitations & Next Steps
+My approach:
+Added retries with limits and exponential backoff for:
 
-Be honest about what's still not perfect.
+503 errors
 
-**Current limitations:**  
-[What's still not production-ready?]
+Request timeouts
 
-**What I'd do with more time:**  
-[If you had another 5 hours, what would you improve?]
+Why this approach:
+These failures are explicitly documented as transient in the mock API.
 
-**Questions I have:**  
-[Anything you're unsure about or would want to discuss?]
+Trade-offs:
+Retries are capped to avoid infinite loops.
 
----
+Fix 5: Parameterized SQL Queries
 
-## Part 7: How to Run My Solution
+My approach:
+Replaced string interpolation with parameterized queries.
 
-Clear step-by-step instructions.
+Why this approach:
+Eliminates injection risk and improves database performance.
 
-### Setup
-```bash
-# Step-by-step commands
-```
+Trade-offs:
+Slightly more verbose code.
 
-### Running
-```bash
-# How to start everything
-```
+Fix 6: Shared Database Connection Pool
 
-### Expected Output
-```
-# What should you see when it works?
-```
+My approach:
+Created a single reusable pool instead of instantiating one per write.
 
-### Testing
-```bash
-# How to verify it's working correctly
-```
+Why this approach:
+Improves scalability and aligns with PostgreSQL best practices.
 
----
+Fix 7: Structured Logging and Sync Metrics
 
-## Part 8: Additional Notes
+My approach:
+Added:
 
-Any other context, thoughts, or reflections on the assignment.
+Sync start/end logs
 
-[Your thoughts here]
+Success/failure counters
 
----
+Retry and rate-limit logs
 
-## Commits Summary
+Why this approach:
+Improves debuggability and production readiness.
 
-List your main commits and what each one addressed:
+Part 3: Code Structure Improvements
 
-1. `[commit hash]` - [Description of what this commit fixed]
-2. `[commit hash]` - [Description]
-3. etc.
+What I changed:
+Separated responsibilities into:
 
----
+API client logic
 
-**Thank you for reviewing my submission!**
+Auth handling
+
+Sync orchestration
+
+Persistence
+
+Utilities
+
+Why it's better:
+
+Easier to test
+
+Easier to extend
+
+Clear ownership of logic
+
+Architecture decisions:
+Service-oriented, functional style for clarity and testability.
+
+Part 4: Testing & Verification
+
+Test scenarios I ran:
+
+Full 100-campaign sync
+
+Forced rate limiting (15 rapid requests)
+
+Simulated 503 failures
+
+Token expiry during sync
+
+Repeated syncs to ensure idempotency
+
+Expected behavior:
+System recovers from failures and completes sync reliably.
+
+Actual results:
+
+100 campaigns synced
+
+78/78 tests passing
+
+No crashes or silent data loss
+
+Edge cases tested:
+Timeouts, partial failures, expired tokens, API slowness.
+
+Part 5: Production Considerations
+Monitoring & Observability
+
+Sync success rate
+
+Failure types
+
+Retry counts
+
+Sync duration
+
+Error Handling & Recovery
+
+Dead-letter queue for failed campaigns
+
+Circuit breakers
+
+Scaling Considerations
+
+Background workers
+
+Queue-based ingestion
+
+Multi-tenant isolation
+
+Security Improvements
+
+Secret vaults
+
+Token rotation
+
+Audit logging
+
+Performance Optimizations
+
+Batched DB writes
+
+Controlled concurrency
+
+Part 6: Limitations & Next Steps
+
+Current limitations:
+
+No UI
+
+No public API
+
+Single-tenant
+
+What I'd do with more time:
+
+Scheduled hourly sync
+
+REST API
+
+Dashboard UI
+
+WebSocket updates

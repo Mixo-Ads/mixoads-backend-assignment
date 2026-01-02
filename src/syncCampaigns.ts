@@ -1,117 +1,100 @@
-import fetch from 'node-fetch';
-import { saveCampaignToDB } from './database';
+import { ApiClient } from "./api-client"
+import { saveCampaignToDB, initializeDatabase } from "./database"
+import pLimit from "p-limit"
 
-// Configuration constants
-const API_BASE_URL = process.env.AD_PLATFORM_API_URL || 'http://localhost:3001';
-const PAGE_SIZE = 10;
+const API_BASE_URL = process.env.AD_PLATFORM_API_URL || "http://localhost:3001"
+const EMAIL = process.env.API_EMAIL || "admin@mixoads.com"
+const PASSWORD = process.env.API_PASSWORD || "SuperSecret123!"
+const PAGE_SIZE = Number.parseInt(process.env.PAGE_SIZE || "10")
+const CONCURRENCY_LIMIT = Number.parseInt(process.env.CONCURRENCY_LIMIT || "3")
 
-// Type definitions for campaigns
-interface Campaign {
-  id: string;
-  name: string;
-  status: string;
-  budget: number;
-  impressions: number;
-  clicks: number;
-  conversions: number;
-  created_at: string;
+export interface SyncStats {
+  total: number
+  successful: number
+  failed: number
+  errors: Array<{ campaignId: string; error: string }>
 }
 
-// Helper function to add timeout to fetch requests
-async function fetchWithTimeout(url: string, options: any, timeout = 5000) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
-  
+export async function syncAllCampaigns(): Promise<SyncStats> {
+  console.log("🚀 Starting campaign sync...")
+  console.log("=".repeat(60))
+
+  // Initialize database
+  await initializeDatabase()
+
+  // Create API client
+  const apiClient = new ApiClient({
+    baseUrl: API_BASE_URL,
+    email: EMAIL,
+    password: PASSWORD,
+    timeout: 15000,
+    maxRetries: 3,
+  })
+
+  const stats: SyncStats = {
+    total: 0,
+    successful: 0,
+    failed: 0,
+    errors: [],
+  }
+
   try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-    return response;
-  } catch (error: any) {
-    if (error.name === 'AbortError') {
-      throw new Error('Request timeout');
-    }
-    throw error;
-  }
-}
+    // Fetch all campaigns with pagination
+    const campaigns = await apiClient.fetchAllCampaigns(PAGE_SIZE)
+    stats.total = campaigns.length
 
-export async function syncAllCampaigns() {
-  console.log('Syncing campaigns from Ad Platform...\n');
-  
-  const email = "admin@mixoads.com";
-  const password = "SuperSecret123!";
-  
-  const authString = Buffer.from(`${email}:${password}`).toString('base64');
-  
-  console.log(`Using auth: Basic ${authString}`);
-  
-  console.log('\nStep 1: Getting access token...');
-  
-  const authResponse = await fetch(`${API_BASE_URL}/auth/token`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Basic ${authString}`
+    console.log("\n💾 Syncing campaigns to database...")
+    console.log(`   Concurrency limit: ${CONCURRENCY_LIMIT}`)
+
+    // Create concurrency limiter
+    const limit = pLimit(CONCURRENCY_LIMIT)
+
+    // Process campaigns concurrently with limit
+    const syncPromises = campaigns.map((campaign) =>
+      limit(async () => {
+        try {
+          console.log(`   🔄 Syncing: ${campaign.name} (${campaign.id})`)
+
+          // Call sync endpoint
+          await apiClient.syncCampaign(campaign.id)
+
+          // Save to database
+          await saveCampaignToDB(campaign)
+
+          stats.successful++
+          console.log(`   ✅ Synced: ${campaign.name}`)
+        } catch (error: any) {
+          stats.failed++
+          stats.errors.push({
+            campaignId: campaign.id,
+            error: error.message,
+          })
+          console.error(`   ❌ Failed: ${campaign.name} - ${error.message}`)
+        }
+      }),
+    )
+
+    // Wait for all syncs to complete
+    await Promise.all(syncPromises)
+
+    console.log("\n" + "=".repeat(60))
+    console.log("📊 Sync Summary:")
+    console.log(`   Total campaigns: ${stats.total}`)
+    console.log(`   ✅ Successful: ${stats.successful}`)
+    console.log(`   ❌ Failed: ${stats.failed}`)
+    console.log(`   Success rate: ${((stats.successful / stats.total) * 100).toFixed(1)}%`)
+    console.log("=".repeat(60))
+
+    if (stats.errors.length > 0) {
+      console.log("\n❌ Errors:")
+      stats.errors.forEach(({ campaignId, error }) => {
+        console.log(`   ${campaignId}: ${error}`)
+      })
     }
-  });
-  
-  const authData: any = await authResponse.json();
-  const accessToken = authData.access_token;
-  
-  console.log(`Got access token: ${accessToken}`);
-  
-  console.log('\nStep 2: Fetching campaigns...');
-  
-  const campaignsResponse = await fetch(`${API_BASE_URL}/api/campaigns?page=1&limit=${PAGE_SIZE}`, {
-    headers: {
-      'Authorization': `Bearer ${accessToken}`
-    }
-  });
-  
-  if (!campaignsResponse.ok) {
-    throw new Error(`API returned ${campaignsResponse.status}: ${campaignsResponse.statusText}`);
+
+    return stats
+  } catch (error: any) {
+    console.error("\n❌ Critical error during sync:", error.message)
+    throw error
   }
-  
-  const campaignsData: any = await campaignsResponse.json();
-  
-  console.log(`Found ${campaignsData.data.length} campaigns`);
-  console.log(`Pagination: page ${campaignsData.pagination.page}, has_more: ${campaignsData.pagination.has_more}`);
-  
-  console.log('\nStep 3: Syncing campaigns to database...');
-  
-  let successCount = 0;
-  
-  for (const campaign of campaignsData.data) {
-    console.log(`\n   Syncing: ${campaign.name} (ID: ${campaign.id})`);
-    
-    try {
-      const syncResponse = await fetchWithTimeout(
-        `http://localhost:3001/api/campaigns/${campaign.id}/sync`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ campaign_id: campaign.id })
-        },
-        1000
-      );
-      
-      const syncData: any = await syncResponse.json();
-      
-      await saveCampaignToDB(campaign);
-      
-      successCount++;
-      console.log(`   Successfully synced ${campaign.name}`);
-      
-    } catch (error: any) {
-      console.error(`   Failed to sync ${campaign.name}:`, error.message);
-    }
-  }
-  
-  console.log('\n' + '='.repeat(60));
-  console.log(`Sync complete: ${successCount}/${campaignsData.data.length} campaigns synced`);
-  console.log('='.repeat(60));
 }

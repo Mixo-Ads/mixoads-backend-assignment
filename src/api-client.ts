@@ -121,7 +121,6 @@ export class ApiClient {
    * Authenticate and get access token with auto-refresh
    */
   async authenticate(): Promise<string> {
-    // Check if token is still valid (with 5 minute buffer)
     if (this.accessToken && this.tokenExpiresAt && Date.now() < this.tokenExpiresAt - 300000) {
       return this.accessToken
     }

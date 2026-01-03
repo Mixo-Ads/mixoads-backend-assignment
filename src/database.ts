@@ -1,35 +1,40 @@
-import { Pool } from 'pg';
+/**
+ * This file simulates a database layer.
+ * For this assignment, persistence beyond runtime is not required.
+ */
 
-async function getDB() {
-  return new Pool({
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT || '5432'),
-    database: process.env.DB_NAME || 'mixoads',
-    user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || 'postgres'
-  });
+interface Campaign {
+  id: string;
+  name: string;
+  status: string;
+  budget: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+  created_at: string;
+  synced_at: string;
 }
 
-export async function saveCampaignToDB(campaign: any) {
-  if (process.env.USE_MOCK_DB === 'true') {
-    console.log(`      [MOCK DB] Saved campaign: ${campaign.id}`);
-    return;
-  }
-  
-  const pool = await getDB();
-  
-  try {
+// Simple in-memory store
+const campaignStore = new Map<string, Campaign>();
 
-    const query = `
-      INSERT INTO campaigns (id, name, status, budget, impressions, clicks, conversions, synced_at)
-      VALUES ('${campaign.id}', '${campaign.name}', '${campaign.status}', 
-              ${campaign.budget}, ${campaign.impressions}, ${campaign.clicks}, 
-              ${campaign.conversions}, NOW())
-    `;
-    
-    await pool.query(query);
-    
-  } catch (error: any) {
-    throw new Error(`Database error: ${error.message}`);
-  }
+/**
+ * Save or update a campaign in memory.
+ */
+export async function saveCampaignToDB(
+  campaign: Omit<Campaign, 'synced_at'>
+): Promise<void> {
+  campaignStore.set(campaign.id, {
+    ...campaign,
+    synced_at: new Date().toISOString()
+  });
+
+  console.log(`      💾 Saved campaign ${campaign.id}`);
+}
+
+/**
+ * Optional helper (useful for debugging / testing).
+ */
+export function getAllCampaigns(): Campaign[] {
+  return Array.from(campaignStore.values());
 }

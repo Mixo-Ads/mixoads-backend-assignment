@@ -7,13 +7,17 @@
     "start": "ts-node src/index.ts",
     "dev": "ts-node-dev --respawn src/index.ts"
   },
-  "keywords": ["backend", "assignment", "mixoads"],
+  "keywords": [
+    "backend",
+    "assignment",
+    "mixoads"
+  ],
   "author": "Mixo Ads",
   "license": "ISC",
   "dependencies": {
+    "dotenv": "^16.6.1",
     "node-fetch": "^2.7.0",
-    "pg": "^8.11.0",
-    "dotenv": "^16.3.1"
+    "pg": "^8.11.0"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

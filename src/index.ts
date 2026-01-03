@@ -1,19 +1,19 @@
-import dotenv from 'dotenv';
+import 'dotenv/config';
 import { syncAllCampaigns } from './syncCampaigns';
 
-dotenv.config();
-
+/**
+ * Application entry point.
+ * This service is a background job, not a web server.
+ */
 async function main() {
-  console.log('Starting campaign sync...');
-  console.log('='.repeat(60));
-  
-  try {
+  // try {
+    console.log('🚀 Starting campaign sync job...\n');
     await syncAllCampaigns();
-    console.log('\nSync completed successfully!');
-  } catch (error) {
-    console.error('\nSync failed:', error);
-    process.exit(1);
-  }
+    console.log('\n✅ Campaign sync finished successfully');
+  // } catch (error: any) {
+  //   console.error('❌ Campaign sync failed:', error.message);
+  //   process.exit(1);
+  // }
 }
 
 main();

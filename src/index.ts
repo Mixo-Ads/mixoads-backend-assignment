@@ -1,7 +1,5 @@
-import dotenv from 'dotenv';
 import { syncAllCampaigns } from './syncCampaigns';
-
-dotenv.config();
+import { closeDB } from './database';
 
 async function main() {
   console.log('Starting campaign sync...');
@@ -13,6 +11,8 @@ async function main() {
   } catch (error) {
     console.error('\nSync failed:', error);
     process.exit(1);
+  } finally {
+    await closeDB();
   }
 }
 
